@@ -171,6 +171,7 @@ class GCPDocumentAIClient:
         document_data: bytes,
         mime_type: str,
         field_mask: Optional[str] = None,
+        process_options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Process a document synchronously (online processing).
@@ -180,6 +181,7 @@ class GCPDocumentAIClient:
             document_data: Raw document bytes
             mime_type: MIME type of the document
             field_mask: Optional field mask to limit response fields
+            process_options: Optional processOptions dict (e.g. layoutConfig)
 
         Returns:
             Document dict (the "document" key from the REST response)
@@ -196,6 +198,9 @@ class GCPDocumentAIClient:
 
         if field_mask:
             body["fieldMask"] = field_mask
+
+        if process_options:
+            body["processOptions"] = process_options
 
         logger.info(
             f"Processing document with processor {processor_id}, mime={mime_type}, size={len(document_data)} bytes"
@@ -377,14 +382,19 @@ class DocumentAnalysisResult:
                 self._walk_layout_blocks(nested, out, level + 1)
 
     def get_layout_page_count(self) -> int:
-        """Derive page count from layout block page spans."""
+        """Derive page count from layout block page spans.
+
+        The REST API uses 1-based page numbering in ``pageSpan``, so the
+        max ``pageEnd`` value already equals the page count.
+        """
+        # Prefer the pages array when present (may contain empty page stubs)
+        pages = self.document.get("pages", [])
+        if pages:
+            return len(pages)
         blocks = self.get_document_layout()
         if not blocks:
-            # Fallback: check pages array length
-            pages = self.document.get("pages", [])
-            return len(pages) if pages else 0
-        max_page = max(b["page_end"] for b in blocks)
-        return max_page + 1
+            return 0
+        return max(b["page_end"] for b in blocks)
 
     def get_chunked_document(self) -> List[Dict[str, Any]]:
         """Parse ``chunkedDocument.chunks`` into a list of dicts.

@@ -214,10 +214,24 @@ def handle_document_analysis(
         status_placeholder.info("Uploading document and processing...")
 
         try:
+            # Enable chunking for Layout Parser so chunkedDocument is populated
+            process_options = None
+            proc_type = processor_info.get("processor_type", "")
+            if proc_type == "LAYOUT_PARSER_PROCESSOR":
+                process_options = {
+                    "layoutConfig": {
+                        "chunkingConfig": {
+                            "chunkSize": 500,
+                            "includeAncestorHeadings": True,
+                        }
+                    }
+                }
+
             document_dict = client.process_document(
                 processor_id=processor_id,
                 document_data=file_data,
                 mime_type=mime_type,
+                process_options=process_options,
             )
 
             analysis = DocumentAnalysisResult(document_dict)
@@ -237,7 +251,10 @@ def handle_document_analysis(
                     st.metric("Chunks", len(analysis.get_chunked_document()))
                 with col4:
                     text = analysis.get_text()
-                    st.metric("Characters", len(text))
+                    char_count = len(text) if text else sum(
+                        len(b["text"]) for b in analysis.get_document_layout()
+                    )
+                    st.metric("Characters", char_count)
             else:
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -652,9 +669,13 @@ def render_document_preview(uploaded_file, file_source: str):
 
                     if not has_boxes and analysis.is_layout_parser_result():
                         st.info(
-                            "Layout Parser provides structural analysis without "
-                            "bounding box overlays. See the **Document Layout** tab "
-                            "for results."
+                            "Layout Parser detects document structure (headings, "
+                            "paragraphs, tables, lists) but the GCP API does not "
+                            "return bounding box coordinates for these blocks, so "
+                            "visual overlays are not available. See the **Document "
+                            "Layout** tab below for the detected structure. For "
+                            "bounding box overlays, use **Form Parser** or **OCR "
+                            "Processor** instead."
                         )
                         st.image(
                             display_image,
