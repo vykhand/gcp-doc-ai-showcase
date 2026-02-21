@@ -10,48 +10,10 @@ import streamlit as st
 from config import (
     GCP_DOCAI_PROCESSORS,
     PROCESSOR_CATEGORIES,
-    GCP_DOCAI_LOCATIONS,
-    GCP_DOCAI_DEFAULT_LOCATION,
     get_processors_by_category,
     get_processor_display_name,
     get_processor_info,
 )
-
-
-# ------------------------------------------------------------------
-# Project configuration (GCP-specific)
-# ------------------------------------------------------------------
-
-
-class ProjectConfiguration:
-    """GCP project configuration in the sidebar."""
-
-    @staticmethod
-    def render_project_config() -> Dict[str, Any]:
-        """
-        Render project ID, location, and auth method inputs.
-
-        Returns:
-            Dict with project_id, location, and optional credentials info.
-        """
-        st.sidebar.header("GCP Project")
-
-        project_id = st.sidebar.text_input(
-            "Project ID",
-            value=st.session_state.get("gcp_project_id", ""),
-            placeholder="my-gcp-project",
-            help="Your Google Cloud project ID",
-            key="gcp_project_id_input",
-        )
-
-        location = st.sidebar.selectbox(
-            "Location",
-            options=GCP_DOCAI_LOCATIONS,
-            index=GCP_DOCAI_LOCATIONS.index(GCP_DOCAI_DEFAULT_LOCATION),
-            help="Document AI processing location (us or eu)",
-        )
-
-        return {"project_id": project_id, "location": location}
 
 
 # ------------------------------------------------------------------
@@ -464,5 +426,5 @@ def render_connection_status(client):
         else:
             st.error(
                 "No GCP Document AI client configured. "
-                "Please enter your project ID and credentials."
+                "Please enter your endpoint and API key."
             )

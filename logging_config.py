@@ -33,8 +33,6 @@ def setup_logging(level: Optional[str] = None) -> None:
         'urllib3': logging.WARNING,
         'requests': logging.WARNING,
         'streamlit': logging.WARNING,
-        'google': logging.WARNING,
-        'grpc': logging.WARNING,
     }
 
     for logger_name, logger_level in loggers.items():

@@ -4,7 +4,6 @@
 
 - A GitHub repository with this project
 - A Streamlit Community Cloud account ([share.streamlit.io](https://share.streamlit.io))
-- A GCP service account with `roles/documentai.apiUser`
 
 ## Step 1: Generate requirements.txt
 
@@ -24,30 +23,19 @@ Commit `requirements.txt` to your repository.
 4. Set the main file path to `app.py`
 5. Click **Deploy**
 
-## Step 3: Configure Secrets
+## Step 3: Authentication
 
-In the Streamlit Cloud dashboard:
+No secrets configuration is needed by default. Each user provides their own **endpoint** and **API key** in the sidebar. This ensures users consume their own GCP resources.
+
+If you want to pre-configure defaults (so users don't have to enter credentials), add secrets in the Streamlit Cloud dashboard:
 
 1. Open your app's settings
 2. Go to the **Secrets** tab
-3. Paste the following (with your actual values):
+3. Add:
 
 ```toml
-GCP_PROJECT_ID = "your-gcp-project-id"
-GCP_LOCATION = "us"
-
-[gcp_service_account]
-type = "service_account"
-project_id = "your-gcp-project-id"
-private_key_id = "your-key-id"
-private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-client_email = "docai-sa@your-project.iam.gserviceaccount.com"
-client_id = "123456789"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
-auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
-universe_domain = "googleapis.com"
+GCP_DOCAI_ENDPOINT = "https://us-documentai.googleapis.com/v1/projects/your-project/locations/us"
+GCP_DOCAI_API_KEY = "your-api-key"
 ```
 
 4. Click **Save**
@@ -61,9 +49,10 @@ The `packages.txt` file tells Streamlit Cloud to install `poppler-utils` (needed
 After deployment:
 
 1. Open the app URL
-2. Check the sidebar - it should show "Connection successful!" in the Connection Status expander
-3. Your processors should appear in the processor dropdown
-4. Upload a document and test analysis
+2. Enter your endpoint and API key in the sidebar
+3. Check the **Connection Status** expander — it should show "Connection successful!"
+4. Your processors should appear in the processor dropdown
+5. Upload a document and test analysis
 
 ## Troubleshooting
 
@@ -75,11 +64,11 @@ After deployment:
 
 ### Authentication failures
 
-- Double-check that the service account JSON fields in secrets are correct
-- Ensure the `private_key` value includes the newlines (`\n`)
-- Verify the service account has `roles/documentai.apiUser` on the project
+- Verify the API key is valid and restricted to the Cloud Document AI API
+- Ensure the Document AI API is enabled in the GCP project
+- Check that the endpoint URL is correctly formatted
 
 ### No processors found
 
-- The service account needs `documentai.processors.list` permission
-- Processors must be in the same location configured in `GCP_LOCATION`
+- Ensure at least one processor is created in the project/location specified in the endpoint
+- Verify the API key has access to the Document AI API

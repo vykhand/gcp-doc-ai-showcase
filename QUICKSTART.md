@@ -40,30 +40,12 @@ You need to create at least one processor. Go to the [GCP Console > Document AI]
 | Invoice Parser | Invoice processing |
 | Expense Parser | Receipt/expense reports |
 
-## 4. Set Up Authentication
+## 4. Create an API Key
 
-### Option A: Application Default Credentials (local development)
-
-```bash
-gcloud auth application-default login
-```
-
-### Option B: Service Account (production / Streamlit Cloud)
-
-```bash
-# Create service account
-gcloud iam service-accounts create docai-sa \
-    --display-name="Document AI Service Account"
-
-# Grant permissions
-gcloud projects add-iam-policy-binding my-docai-project \
-    --member="serviceAccount:docai-sa@my-docai-project.iam.gserviceaccount.com" \
-    --role="roles/documentai.apiUser"
-
-# Download key
-gcloud iam service-accounts keys create key.json \
-    --iam-account=docai-sa@my-docai-project.iam.gserviceaccount.com
-```
+1. Go to **GCP Console > APIs & Services > Credentials**
+2. Click **Create Credentials > API Key**
+3. Click **Restrict Key** and under **API restrictions**, select **Cloud Document AI API**
+4. Save and copy your API key
 
 ## 5. Configure the Application
 
@@ -75,22 +57,18 @@ Create a `.env` file from the template:
 cp .env.template .env
 ```
 
-Edit `.env`:
+Edit `.env` with your endpoint and API key:
 
 ```
-GCP_PROJECT_ID=my-docai-project
-GCP_LOCATION=us
+GCP_DOCAI_ENDPOINT=https://us-documentai.googleapis.com/v1/projects/my-docai-project/locations/us
+GCP_DOCAI_API_KEY=AIza...
 ```
 
-If using a service account key file:
-
-```
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
-```
+The endpoint encodes your project ID and location. Replace `my-docai-project` with your project ID and `us` with your region (`us` or `eu`).
 
 ### Streamlit Cloud
 
-Copy `.streamlit/secrets.toml.template` to `.streamlit/secrets.toml` and fill in your values. See [STREAMLIT_DEPLOYMENT.md](STREAMLIT_DEPLOYMENT.md) for details.
+No secrets are required by default. Each user provides their own endpoint and API key in the sidebar. See [STREAMLIT_DEPLOYMENT.md](STREAMLIT_DEPLOYMENT.md) for details.
 
 ## 6. Run the Application
 
@@ -106,27 +84,21 @@ The app will open in your browser. Select a processor from the sidebar, upload a
 
 ## Troubleshooting
 
-### "Permission denied" errors
+### "Permission denied" or 403 errors
 
-Ensure your account/service account has `roles/documentai.apiUser`:
-
-```bash
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="user:you@example.com" \
-    --role="roles/documentai.apiUser"
-```
+Ensure the API key is restricted to the **Cloud Document AI API** and that the Document AI API is enabled in your project.
 
 ### "Processor not found" errors
 
 - Check the processor ID is correct
-- Ensure the processor is in the same location (us/eu) as configured
+- Ensure the processor is in the same location (us/eu) as your endpoint
 - Verify the processor state is ENABLED in the Console
 
 ### No processors discovered
 
-The app auto-discovers processors via `list_processors()`. If none appear:
+The app auto-discovers processors via the REST API. If none appear:
 - Make sure you've created at least one processor in the configured project/location
-- Check that your credentials have `documentai.processors.list` permission
+- Verify the API key has access to the Document AI API
 
 ### Debug logging
 

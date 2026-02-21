@@ -19,7 +19,7 @@ Interactive Streamlit application for processing documents with **Google Cloud D
 - [uv](https://docs.astral.sh/uv/) package manager
 - A GCP project with Document AI API enabled
 - At least one Document AI processor created in the project
-- Authentication (ADC or service account key)
+- A GCP API key restricted to the Cloud Document AI API
 
 ## Quick Start
 
@@ -31,17 +31,9 @@ cd gcp-doc-ai-showcase
 # Install dependencies
 uv sync
 
-# Set up authentication (choose one):
-
-# Option A: Application Default Credentials
-gcloud auth application-default login
-export GCP_PROJECT_ID="your-project-id"
-export GCP_LOCATION="us"
-
-# Option B: Service account key
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
-export GCP_PROJECT_ID="your-project-id"
-export GCP_LOCATION="us"
+# Set up authentication:
+export GCP_DOCAI_ENDPOINT="https://us-documentai.googleapis.com/v1/projects/your-project-id/locations/us"
+export GCP_DOCAI_API_KEY="your-api-key"
 
 # Run the app
 uv run streamlit run app.py
@@ -54,7 +46,7 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed GCP setup instructions.
 ```
 app.py                  # Main Streamlit entry point
 config.py               # Processor definitions, categories, colors
-gcp_docai_client.py     # GCP Document AI SDK client + DocumentAnalysisResult
+gcp_docai_client.py     # GCP Document AI REST client + DocumentAnalysisResult
 document_processor.py   # File validation, PDF-to-image, coordinate math
 ui_components.py        # Reusable Streamlit UI components
 simple_annotator.py     # PIL-based image annotation
@@ -75,12 +67,17 @@ logging_config.py       # Centralized logging
 
 Online processing supports up to 15 pages per request.
 
-## Authentication Options
+## Authentication
 
-1. **Application Default Credentials (ADC)**: `gcloud auth application-default login`
-2. **Service Account Key**: Set `GOOGLE_APPLICATION_CREDENTIALS` env var
-3. **Streamlit Secrets**: Configure in `.streamlit/secrets.toml` (for cloud deployment)
-4. **Manual Input**: Enter credentials directly in the sidebar
+Provide an **endpoint URL** and an **API key**:
+
+1. **API Key**: Create in GCP Console > APIs & Services > Credentials. Restrict to the Cloud Document AI API.
+2. **Endpoint**: `https://{location}-documentai.googleapis.com/v1/projects/{project_id}/locations/{location}`
+
+You can supply these via:
+- **Environment variables**: `GCP_DOCAI_ENDPOINT` and `GCP_DOCAI_API_KEY`
+- **Streamlit secrets**: Add to `.streamlit/secrets.toml`
+- **Sidebar input**: Enter directly in the app's sidebar
 
 ## Visualization
 

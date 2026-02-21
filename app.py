@@ -28,7 +28,6 @@ from gcp_docai_client import (
 )
 from document_processor import DocumentProcessor, ResultsFormatter
 from ui_components import (
-    ProjectConfiguration,
     ProcessorSelector,
     FileUploadSection,
     ResultsDisplay,
@@ -100,54 +99,32 @@ def initialize_session_state():
 
 
 def create_gcp_client() -> Optional[GCPDocumentAIClient]:
-    """Create GCP Document AI client from available credentials."""
+    """Create GCP Document AI client from endpoint + API key."""
     client = create_client_from_env()
 
     if client:
         return client
 
     # Fall back to manual input in sidebar
-    st.sidebar.warning("GCP credentials not found in environment or secrets.")
-    st.sidebar.markdown("### Enter Credentials")
+    st.sidebar.warning("GCP endpoint/API key not found in environment or secrets.")
+    st.sidebar.markdown("### Connect to Document AI")
 
-    project_config = ProjectConfiguration.render_project_config()
-    project_id = project_config["project_id"]
-    location = project_config["location"]
-
-    auth_method = st.sidebar.radio(
-        "Authentication method:",
-        ["Application Default Credentials (ADC)", "Service Account JSON"],
-        help=(
-            "ADC: uses `gcloud auth application-default login`. "
-            "Service Account JSON: paste the JSON key content."
-        ),
+    endpoint = st.sidebar.text_input(
+        "Endpoint",
+        placeholder="https://us-documentai.googleapis.com/v1/projects/PROJECT_ID/locations/us",
+        help="Your Document AI endpoint URL (encodes project ID and location)",
     )
 
-    credentials = None
-    if auth_method == "Service Account JSON":
-        sa_json = st.sidebar.text_area(
-            "Service Account JSON",
-            placeholder='{"type": "service_account", ...}',
-            help="Paste the full contents of your service account key JSON file",
-            height=150,
-        )
-        if sa_json:
-            try:
-                import json
-                from google.oauth2 import service_account
+    api_key = st.sidebar.text_input(
+        "API Key",
+        type="password",
+        placeholder="AIza...",
+        help="GCP API key restricted to the Cloud Document AI API",
+    )
 
-                sa_info = json.loads(sa_json)
-                credentials = service_account.Credentials.from_service_account_info(
-                    sa_info,
-                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
-                )
-            except Exception as e:
-                st.sidebar.error(f"Invalid service account JSON: {e}")
-                return None
-
-    if project_id:
+    if endpoint and api_key:
         try:
-            client = GCPDocumentAIClient(project_id, location, credentials)
+            client = GCPDocumentAIClient(endpoint, api_key)
             st.sidebar.success("Client created!")
             return client
         except Exception as e:
@@ -157,21 +134,22 @@ def create_gcp_client() -> Optional[GCPDocumentAIClient]:
     # Show setup help
     with st.sidebar.expander("Setup Help", expanded=False):
         st.markdown(
-            "**Option 1: Environment Variables + ADC**\n"
-            "```bash\n"
-            "export GCP_PROJECT_ID='my-project'\n"
-            "export GCP_LOCATION='us'\n"
-            "gcloud auth application-default login\n"
+            "**1. Create an API Key**\n"
+            "Go to **GCP Console > APIs & Services > Credentials**, "
+            "click **Create Credentials > API Key**, then restrict it "
+            "to the **Cloud Document AI API**.\n\n"
+            "**2. Construct the Endpoint**\n"
+            "```\n"
+            "https://{LOCATION}-documentai.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}\n"
+            "```\n"
+            "Example:\n"
+            "```\n"
+            "https://us-documentai.googleapis.com/v1/projects/my-project/locations/us\n"
             "```\n\n"
-            "**Option 2: Streamlit Secrets**\n"
-            "Add to `.streamlit/secrets.toml`:\n"
-            "```toml\n"
-            'GCP_PROJECT_ID = "my-project"\n'
-            'GCP_LOCATION = "us"\n\n'
-            "[gcp_service_account]\n"
-            'type = "service_account"\n'
-            'project_id = "my-project"\n'
-            "# ... rest of service account JSON fields\n"
+            "**3. Environment Variables (optional)**\n"
+            "```bash\n"
+            "export GCP_DOCAI_ENDPOINT='https://us-documentai.googleapis.com/v1/projects/my-project/locations/us'\n"
+            "export GCP_DOCAI_API_KEY='AIza...'\n"
             "```"
         )
     return None
@@ -228,15 +206,15 @@ def handle_document_analysis(
         status_placeholder.info("Uploading document and processing...")
 
         try:
-            document = client.process_document(
+            document_dict = client.process_document(
                 processor_id=processor_id,
                 document_data=file_data,
                 mime_type=mime_type,
             )
 
-            analysis = DocumentAnalysisResult(document)
+            analysis = DocumentAnalysisResult(document_dict)
             st.session_state.analysis_result = analysis
-            st.session_state.raw_result_dict = analysis.to_dict()
+            st.session_state.raw_result_dict = document_dict
 
             status_placeholder.success("Document analysis completed successfully!")
 
