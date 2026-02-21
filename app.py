@@ -99,14 +99,14 @@ def initialize_session_state():
 
 
 def create_gcp_client() -> Optional[GCPDocumentAIClient]:
-    """Create GCP Document AI client from endpoint + API key."""
+    """Create GCP Document AI client from endpoint + service account JSON."""
     client = create_client_from_env()
 
     if client:
         return client
 
     # Fall back to manual input in sidebar
-    st.sidebar.warning("GCP endpoint/API key not found in environment or secrets.")
+    st.sidebar.warning("GCP credentials not found in environment or secrets.")
     st.sidebar.markdown("### Connect to Document AI")
 
     endpoint = st.sidebar.text_input(
@@ -115,16 +115,18 @@ def create_gcp_client() -> Optional[GCPDocumentAIClient]:
         help="Your Document AI endpoint URL (encodes project ID and location)",
     )
 
-    api_key = st.sidebar.text_input(
-        "API Key",
-        type="password",
-        placeholder="AIza...",
-        help="GCP API key restricted to the Cloud Document AI API",
+    sa_json_str = st.sidebar.text_area(
+        "Service Account Key (JSON)",
+        placeholder='{"type": "service_account", ...}',
+        help="Paste the full contents of your service account key JSON file",
+        height=150,
     )
 
-    if endpoint and api_key:
+    if endpoint and sa_json_str:
         try:
-            client = GCPDocumentAIClient(endpoint, api_key)
+            import json as _json
+            sa_info = _json.loads(sa_json_str)
+            client = GCPDocumentAIClient(endpoint, sa_info)
             st.sidebar.success("Client created!")
             return client
         except Exception as e:
@@ -134,10 +136,16 @@ def create_gcp_client() -> Optional[GCPDocumentAIClient]:
     # Show setup help
     with st.sidebar.expander("Setup Help", expanded=False):
         st.markdown(
-            "**1. Create an API Key**\n"
-            "Go to **GCP Console > APIs & Services > Credentials**, "
-            "click **Create Credentials > API Key**, then restrict it "
-            "to the **Cloud Document AI API**.\n\n"
+            "**1. Create a Service Account & Download Key**\n"
+            "```bash\n"
+            "gcloud iam service-accounts create docai-sa\n"
+            "gcloud projects add-iam-policy-binding PROJECT \\\\\n"
+            "  --member='serviceAccount:docai-sa@PROJECT.iam.gserviceaccount.com' \\\\\n"
+            "  --role='roles/documentai.apiUser'\n"
+            "gcloud iam service-accounts keys create key.json \\\\\n"
+            "  --iam-account=docai-sa@PROJECT.iam.gserviceaccount.com\n"
+            "```\n"
+            "Paste the contents of `key.json` above.\n\n"
             "**2. Construct the Endpoint**\n"
             "```\n"
             "https://{LOCATION}-documentai.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}\n"
@@ -148,8 +156,8 @@ def create_gcp_client() -> Optional[GCPDocumentAIClient]:
             "```\n\n"
             "**3. Environment Variables (optional)**\n"
             "```bash\n"
-            "export GCP_DOCAI_ENDPOINT='https://us-documentai.googleapis.com/v1/projects/my-project/locations/us'\n"
-            "export GCP_DOCAI_API_KEY='AIza...'\n"
+            "export GCP_DOCAI_ENDPOINT='https://...'\n"
+            "export GOOGLE_APPLICATION_CREDENTIALS='/path/to/key.json'\n"
             "```"
         )
     return None
@@ -219,15 +227,27 @@ def handle_document_analysis(
             status_placeholder.success("Document analysis completed successfully!")
 
             # Summary metrics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Pages", len(analysis.get_pages()))
-            with col2:
-                st.metric("Tables", len(analysis.get_tables()))
-            with col3:
-                st.metric("Form Fields", len(analysis.get_form_fields()))
-            with col4:
-                st.metric("Entities", len(analysis.get_entities()))
+            if analysis.is_layout_parser_result():
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Pages", analysis.get_layout_page_count())
+                with col2:
+                    st.metric("Blocks", len(analysis.get_document_layout()))
+                with col3:
+                    st.metric("Chunks", len(analysis.get_chunked_document()))
+                with col4:
+                    text = analysis.get_text()
+                    st.metric("Characters", len(text))
+            else:
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Pages", len(analysis.get_pages()))
+                with col2:
+                    st.metric("Tables", len(analysis.get_tables()))
+                with col3:
+                    st.metric("Form Fields", len(analysis.get_form_fields()))
+                with col4:
+                    st.metric("Entities", len(analysis.get_entities()))
 
         except Exception as e:
             error_msg = str(e)
@@ -627,7 +647,21 @@ def render_document_preview(uploaded_file, file_source: str):
                     analysis = st.session_state.analysis_result
                     bounding_boxes = analysis.get_bounding_boxes()
 
-                    if show_labels:
+                    # Check if there are any bounding boxes at all
+                    has_boxes = any(boxes for boxes in bounding_boxes.values())
+
+                    if not has_boxes and analysis.is_layout_parser_result():
+                        st.info(
+                            "Layout Parser provides structural analysis without "
+                            "bounding box overlays. See the **Document Layout** tab "
+                            "for results."
+                        )
+                        st.image(
+                            display_image,
+                            caption=f"Page {page_idx + 1}",
+                            use_container_width=True,
+                        )
+                    elif show_labels:
                         _show_annotation_legend(display_image.width, zoom_level)
                         html_content = _create_interactive_annotations(
                             display_image, bounding_boxes, page_idx, zoom_level

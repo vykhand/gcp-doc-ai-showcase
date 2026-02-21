@@ -247,9 +247,20 @@ class ResultsDisplay:
             analysis_result: DocumentAnalysisResult instance
             raw_dict: JSON-serializable dict for the Raw JSON tab
         """
-        tab_entities, tab_tables, tab_form, tab_text, tab_json = st.tabs(
-            ["Entities / Fields", "Tables", "Form Fields", "Text", "Raw JSON"]
-        )
+        is_layout = analysis_result.is_layout_parser_result()
+
+        if is_layout:
+            tab_names = ["Document Layout", "Chunks", "Entities / Fields", "Tables", "Form Fields", "Text", "Raw JSON"]
+            tab_layout, tab_chunks, tab_entities, tab_tables, tab_form, tab_text, tab_json = st.tabs(tab_names)
+        else:
+            tab_names = ["Entities / Fields", "Tables", "Form Fields", "Text", "Raw JSON"]
+            tab_entities, tab_tables, tab_form, tab_text, tab_json = st.tabs(tab_names)
+
+        if is_layout:
+            with tab_layout:
+                ResultsDisplay._render_document_layout_view(analysis_result)
+            with tab_chunks:
+                ResultsDisplay._render_chunks_view(analysis_result)
 
         with tab_entities:
             ResultsDisplay._render_entities_view(analysis_result)
@@ -265,6 +276,124 @@ class ResultsDisplay:
 
         with tab_json:
             ResultsDisplay._render_json_view(raw_dict)
+
+    @staticmethod
+    def _render_document_layout_view(analysis_result):
+        """Render the hierarchical document layout from Layout Parser."""
+        blocks = analysis_result.get_document_layout()
+        if not blocks:
+            st.info("No document layout blocks found.")
+            return
+
+        # Type → badge colour mapping
+        badge_colors = {
+            "heading-1": "#1a73e8",
+            "heading-2": "#1a73e8",
+            "heading-3": "#1a73e8",
+            "heading-4": "#1a73e8",
+            "heading-5": "#1a73e8",
+            "paragraph": "#5f6368",
+            "table": "#0d652d",
+            "list": "#e37400",
+            "block": "#9334e6",
+        }
+
+        st.markdown(f"**{len(blocks)}** structural blocks detected")
+        st.markdown("---")
+
+        for block in blocks:
+            btype = block["type"]
+            text = block["text"]
+            level = block["level"]
+            page_start = block["page_start"]
+            page_end = block["page_end"]
+
+            indent = "&nbsp;" * (level * 4)
+            color = badge_colors.get(btype, "#666")
+
+            page_label = (
+                f"p.{page_start + 1}"
+                if page_start == page_end
+                else f"p.{page_start + 1}-{page_end + 1}"
+            )
+
+            badge = (
+                f'<span style="background:{color};color:white;padding:2px 8px;'
+                f'border-radius:4px;font-size:0.75em;font-weight:600;">'
+                f'{btype}</span>'
+            )
+            page_badge = (
+                f'<span style="background:#e8eaed;color:#5f6368;padding:2px 6px;'
+                f'border-radius:4px;font-size:0.7em;margin-left:6px;">'
+                f'{page_label}</span>'
+            )
+
+            if btype.startswith("heading"):
+                heading_level = btype.split("-")[-1] if "-" in btype else "1"
+                size = max(1.0, 1.6 - 0.15 * (int(heading_level) - 1))
+                st.markdown(
+                    f'{indent}{badge}{page_badge}<br>'
+                    f'{indent}<span style="font-size:{size}em;font-weight:700;">'
+                    f'{text[:200]}{"…" if len(text) > 200 else ""}</span>',
+                    unsafe_allow_html=True,
+                )
+            elif btype == "table":
+                preview = text[:150].replace("\n", " ↵ ")
+                st.markdown(
+                    f'{indent}{badge}{page_badge}<br>'
+                    f'{indent}<span style="font-family:monospace;font-size:0.85em;">'
+                    f'{preview}{"…" if len(text) > 150 else ""}</span>',
+                    unsafe_allow_html=True,
+                )
+            elif btype == "list":
+                items = text.split("\n")
+                items_preview = items[:5]
+                list_html = "".join(
+                    f'{indent}&nbsp;&nbsp;• {item}<br>' for item in items_preview
+                )
+                extra = f"{indent}&nbsp;&nbsp;… and {len(items) - 5} more items" if len(items) > 5 else ""
+                st.markdown(
+                    f'{indent}{badge}{page_badge}<br>{list_html}{extra}',
+                    unsafe_allow_html=True,
+                )
+            else:
+                preview = text[:200]
+                st.markdown(
+                    f'{indent}{badge}{page_badge} '
+                    f'{preview}{"…" if len(text) > 200 else ""}',
+                    unsafe_allow_html=True,
+                )
+
+    @staticmethod
+    def _render_chunks_view(analysis_result):
+        """Render chunked document data from Layout Parser."""
+        chunks = analysis_result.get_chunked_document()
+        if not chunks:
+            st.info("No chunks found in the response.")
+            return
+
+        st.markdown(f"**{len(chunks)}** chunks extracted")
+
+        for i, chunk in enumerate(chunks):
+            page_span = chunk["page_span"]
+            page_label = (
+                f"Page {page_span['page_start'] + 1}"
+                if page_span["page_start"] == page_span["page_end"]
+                else f"Pages {page_span['page_start'] + 1}-{page_span['page_end'] + 1}"
+            )
+            header = f"Chunk {i + 1}"
+            if chunk["chunk_id"]:
+                header += f"  ({chunk['chunk_id']})"
+            header += f"  — {page_label}"
+
+            with st.expander(header, expanded=(i == 0)):
+                st.text_area(
+                    "Content",
+                    value=chunk["content"],
+                    height=min(300, max(100, len(chunk["content"]) // 3)),
+                    disabled=True,
+                    key=f"chunk_{i}",
+                )
 
     @staticmethod
     def _render_entities_view(analysis_result):

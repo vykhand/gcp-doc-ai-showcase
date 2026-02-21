@@ -19,7 +19,7 @@ Interactive Streamlit application for processing documents with **Google Cloud D
 - [uv](https://docs.astral.sh/uv/) package manager
 - A GCP project with Document AI API enabled
 - At least one Document AI processor created in the project
-- A GCP API key restricted to the Cloud Document AI API
+- A service account with `roles/documentai.apiUser` and a downloaded JSON key
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ uv sync
 
 # Set up authentication:
 export GCP_DOCAI_ENDPOINT="https://us-documentai.googleapis.com/v1/projects/your-project-id/locations/us"
-export GCP_DOCAI_API_KEY="your-api-key"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
 
 # Run the app
 uv run streamlit run app.py
@@ -69,15 +69,15 @@ Online processing supports up to 15 pages per request.
 
 ## Authentication
 
-Provide an **endpoint URL** and an **API key**:
+Provide an **endpoint URL** and a **service account key**:
 
-1. **API Key**: Create in GCP Console > APIs & Services > Credentials. Restrict to the Cloud Document AI API.
+1. **Service account key**: Create a service account, grant `roles/documentai.apiUser`, download the JSON key.
 2. **Endpoint**: `https://{location}-documentai.googleapis.com/v1/projects/{project_id}/locations/{location}`
 
 You can supply these via:
-- **Environment variables**: `GCP_DOCAI_ENDPOINT` and `GCP_DOCAI_API_KEY`
+- **Environment variables**: `GCP_DOCAI_ENDPOINT` and `GOOGLE_APPLICATION_CREDENTIALS`
 - **Streamlit secrets**: Add to `.streamlit/secrets.toml`
-- **Sidebar input**: Enter directly in the app's sidebar
+- **Sidebar input**: Paste endpoint and key JSON directly in the app
 
 ## Visualization
 

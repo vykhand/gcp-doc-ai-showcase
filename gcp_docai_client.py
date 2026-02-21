@@ -1,40 +1,137 @@
 """
 GCP Document AI REST API client.
 Handles all API interactions including document processing and result parsing.
-Uses the REST API with API key authentication instead of the Python SDK.
+Uses the REST API with service account JSON for authentication (no SDK).
 """
 
 import base64
 import json
 import os
+import time
 import traceback
 from typing import Dict, Any, Optional, Tuple, List
 
 import requests
 import streamlit as st
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+_TOKEN_LIFETIME = 3600  # seconds
+
+
+def _b64url(data: bytes) -> str:
+    """Base64url-encode without padding."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _mint_access_token_sa(cred_info: Dict[str, Any]) -> Tuple[str, float]:
+    """
+    Create a self-signed JWT and exchange it for a Google OAuth2 access token.
+    Used for service_account credentials.
+
+    Returns:
+        (access_token, expiry_timestamp)
+    """
+    now = int(time.time())
+    header = json.dumps({"alg": "RS256", "typ": "JWT"}).encode()
+    payload = json.dumps({
+        "iss": cred_info["client_email"],
+        "scope": _SCOPE,
+        "aud": cred_info["token_uri"],
+        "iat": now,
+        "exp": now + _TOKEN_LIFETIME,
+    }).encode()
+
+    signing_input = _b64url(header) + "." + _b64url(payload)
+    private_key = serialization.load_pem_private_key(
+        cred_info["private_key"].encode(), password=None
+    )
+    signature = private_key.sign(
+        signing_input.encode(),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    jwt_token = signing_input + "." + _b64url(signature)
+
+    resp = requests.post(
+        cred_info["token_uri"],
+        data={
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": jwt_token,
+        },
+    )
+    resp.raise_for_status()
+    token_data = resp.json()
+    access_token = token_data["access_token"]
+    expires_in = token_data.get("expires_in", _TOKEN_LIFETIME)
+    return access_token, now + expires_in
+
+
+def _refresh_access_token_user(cred_info: Dict[str, Any]) -> Tuple[str, float]:
+    """
+    Use a refresh token to obtain an access token.
+    Used for authorized_user credentials (ADC from ``gcloud auth application-default login``).
+
+    Returns:
+        (access_token, expiry_timestamp)
+    """
+    resp = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": cred_info["client_id"],
+            "client_secret": cred_info["client_secret"],
+            "refresh_token": cred_info["refresh_token"],
+        },
+    )
+    resp.raise_for_status()
+    token_data = resp.json()
+    access_token = token_data["access_token"]
+    expires_in = token_data.get("expires_in", _TOKEN_LIFETIME)
+    return access_token, int(time.time()) + expires_in
+
+
+def _get_access_token(cred_info: Dict[str, Any]) -> Tuple[str, float]:
+    """Dispatch to the right token minting strategy based on credential type."""
+    cred_type = cred_info.get("type", "")
+    if cred_type == "service_account":
+        return _mint_access_token_sa(cred_info)
+    elif cred_type == "authorized_user":
+        return _refresh_access_token_user(cred_info)
+    else:
+        raise ValueError(f"Unsupported credential type: {cred_type!r}")
+
 
 class GCPDocumentAIClient:
-    """Client for GCP Document AI using the REST API with API key auth."""
+    """Client for GCP Document AI using the REST API with OAuth2 auth."""
 
-    def __init__(self, endpoint: str, api_key: str):
+    def __init__(self, endpoint: str, cred_info: Dict[str, Any]):
         """
         Initialize the GCP Document AI REST client.
 
         Args:
             endpoint: Base endpoint URL, e.g.
                 https://us-documentai.googleapis.com/v1/projects/{project}/locations/{location}
-            api_key: GCP API key restricted to the Cloud Document AI API
+            cred_info: Parsed credential JSON dict (service_account or authorized_user).
         """
         self.endpoint = endpoint.rstrip("/")
-        self.api_key = api_key
+        self._cred_info = cred_info
+        self._access_token: Optional[str] = None
+        self._token_expiry: float = 0
         self.session = requests.Session()
 
         logger.info(f"GCP Document AI REST client initialized for endpoint={self.endpoint}")
+
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Return Authorization header, refreshing the token if needed."""
+        if not self._access_token or time.time() >= self._token_expiry - 60:
+            self._access_token, self._token_expiry = _get_access_token(self._cred_info)
+        return {"Authorization": f"Bearer {self._access_token}"}
 
     def list_processors(self) -> List[Dict[str, Any]]:
         """
@@ -45,7 +142,7 @@ class GCPDocumentAIClient:
         """
         url = f"{self.endpoint}/processors"
         try:
-            resp = self.session.get(url, params={"key": self.api_key})
+            resp = self.session.get(url, headers=self._get_auth_headers())
             resp.raise_for_status()
             data = resp.json()
 
@@ -106,7 +203,7 @@ class GCPDocumentAIClient:
 
         try:
             resp = self.session.post(
-                url, params={"key": self.api_key}, json=body
+                url, headers=self._get_auth_headers(), json=body
             )
             resp.raise_for_status()
             result = resp.json()
@@ -146,6 +243,7 @@ class DocumentAnalysisResult:
 
     def __init__(self, document: Dict[str, Any]):
         self.document = document
+        logger.debug(f"DocumentAnalysisResult top-level keys: {list(document.keys())}")
 
     # ------------------------------------------------------------------
     # Text helpers
@@ -180,6 +278,136 @@ class DocumentAnalysisResult:
     def get_pages(self) -> list:
         """Return all pages."""
         return self.document.get("pages", [])
+
+    # ------------------------------------------------------------------
+    # Layout Parser accessors
+    # ------------------------------------------------------------------
+
+    def is_layout_parser_result(self) -> bool:
+        """Return True if the result comes from a Layout Parser processor.
+
+        Layout Parser populates ``documentLayout`` instead of the traditional
+        ``pages`` array.
+        """
+        has_layout = bool(self.document.get("documentLayout"))
+        has_pages_content = any(
+            page.get("lines") or page.get("paragraphs") or page.get("tables") or page.get("formFields")
+            for page in self.document.get("pages", [])
+        )
+        return has_layout and not has_pages_content
+
+    def get_document_layout(self) -> List[Dict[str, Any]]:
+        """Recursively parse ``documentLayout.blocks`` into a flat list.
+
+        Each entry has:
+          - type: str  (heading-1 … heading-5, paragraph, table, list, block)
+          - text: str
+          - page_start: int
+          - page_end: int
+          - level: int  (nesting depth, 0 = top-level)
+        """
+        doc_layout = self.document.get("documentLayout", {})
+        blocks = doc_layout.get("blocks", [])
+        result: List[Dict[str, Any]] = []
+        self._walk_layout_blocks(blocks, result, level=0)
+        return result
+
+    def _walk_layout_blocks(
+        self,
+        blocks: List[Dict[str, Any]],
+        out: List[Dict[str, Any]],
+        level: int,
+    ) -> None:
+        """Recursively walk layout blocks and append flat entries to *out*."""
+        for block in blocks:
+            block_type = "block"
+            text = ""
+
+            # Determine type and extract text from the block's content
+            text_block = block.get("textBlock")
+            table_block = block.get("tableBlock")
+            list_block = block.get("listBlock")
+
+            if text_block:
+                block_type = text_block.get("type", "paragraph").lower().replace("_", "-")
+                text = text_block.get("text", "")
+            elif table_block:
+                block_type = "table"
+                # Reconstruct text from table body/header rows
+                parts = []
+                for row in table_block.get("headerRows", []) + table_block.get("bodyRows", []):
+                    cell_texts = []
+                    for cell in row.get("cells", []):
+                        # cells may contain nested blocks
+                        cell_parts = []
+                        for cb in cell.get("blocks", []):
+                            tb = cb.get("textBlock")
+                            if tb:
+                                cell_parts.append(tb.get("text", ""))
+                        cell_texts.append(" ".join(cell_parts).strip())
+                    parts.append(" | ".join(cell_texts))
+                text = "\n".join(parts)
+            elif list_block:
+                block_type = "list"
+                # list blocks contain nested blocks for each list item
+                parts = []
+                for lb in list_block.get("listEntries", []):
+                    for cb in lb.get("blocks", []):
+                        tb = cb.get("textBlock")
+                        if tb:
+                            parts.append(tb.get("text", ""))
+                text = "\n".join(parts)
+
+            # Page span
+            page_span = block.get("pageSpan", {})
+            page_start = int(page_span.get("pageStart", 0))
+            page_end = int(page_span.get("pageEnd", page_start))
+
+            out.append({
+                "type": block_type,
+                "text": text.strip(),
+                "page_start": page_start,
+                "page_end": page_end,
+                "level": level,
+            })
+
+            # Recurse into nested blocks (textBlock and others can have sub-blocks)
+            nested = block.get("blocks", [])
+            if nested:
+                self._walk_layout_blocks(nested, out, level + 1)
+
+    def get_layout_page_count(self) -> int:
+        """Derive page count from layout block page spans."""
+        blocks = self.get_document_layout()
+        if not blocks:
+            # Fallback: check pages array length
+            pages = self.document.get("pages", [])
+            return len(pages) if pages else 0
+        max_page = max(b["page_end"] for b in blocks)
+        return max_page + 1
+
+    def get_chunked_document(self) -> List[Dict[str, Any]]:
+        """Parse ``chunkedDocument.chunks`` into a list of dicts.
+
+        Each entry has:
+          - chunk_id: str
+          - content: str
+          - page_span: dict with ``page_start`` and ``page_end``
+        """
+        chunked = self.document.get("chunkedDocument", {})
+        chunks = chunked.get("chunks", [])
+        result = []
+        for chunk in chunks:
+            page_span = chunk.get("pageSpan", {})
+            result.append({
+                "chunk_id": chunk.get("chunkId", ""),
+                "content": chunk.get("content", ""),
+                "page_span": {
+                    "page_start": int(page_span.get("pageStart", 0)),
+                    "page_end": int(page_span.get("pageEnd", 0)),
+                },
+            })
+        return result
 
     def get_page_text_lines(self, page_index: int = 0) -> List[Dict[str, Any]]:
         """Get text lines for a specific page."""
@@ -635,34 +863,57 @@ class DocumentAnalysisResult:
 # ------------------------------------------------------------------
 
 
+_ADC_PATH = os.path.join(
+    os.path.expanduser("~"), ".config", "gcloud", "application_default_credentials.json"
+)
+
+
+def _load_cred_info_from_file(path: str) -> Optional[Dict[str, Any]]:
+    """Load and parse a credential JSON file (service account or ADC)."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def create_client_from_env() -> Optional[GCPDocumentAIClient]:
     """
     Create a GCP Document AI client from available configuration.
 
     Priority:
-    1. Streamlit secrets (GCP_DOCAI_ENDPOINT + GCP_DOCAI_API_KEY)
-    2. Environment variables
-    3. None (caller should prompt for manual input)
+    1. Streamlit secrets (GCP_DOCAI_ENDPOINT + [gcp_service_account])
+    2. Env vars (GCP_DOCAI_ENDPOINT + GOOGLE_APPLICATION_CREDENTIALS file)
+    3. GCP_DOCAI_ENDPOINT + Application Default Credentials (gcloud auth application-default login)
+    4. None (caller should prompt for manual input)
     """
     endpoint = None
-    api_key = None
+    cred_info = None
 
     # Try Streamlit secrets first
     try:
         endpoint = st.secrets.get("GCP_DOCAI_ENDPOINT")
-        api_key = st.secrets.get("GCP_DOCAI_API_KEY")
+        if endpoint:
+            cred_info = dict(st.secrets["gcp_service_account"])
     except Exception:
         pass
 
     # Fall back to environment variables
     if not endpoint:
         endpoint = os.getenv("GCP_DOCAI_ENDPOINT")
-    if not api_key:
-        api_key = os.getenv("GCP_DOCAI_API_KEY")
 
-    if endpoint and api_key:
+    if endpoint and not cred_info:
+        cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if cred_path:
+            cred_info = _load_cred_info_from_file(cred_path)
+
+    # Fall back to ADC file from gcloud auth application-default login
+    if endpoint and not cred_info:
+        cred_info = _load_cred_info_from_file(_ADC_PATH)
+
+    if endpoint and cred_info:
         try:
-            return GCPDocumentAIClient(endpoint, api_key)
+            return GCPDocumentAIClient(endpoint, cred_info)
         except Exception as e:
             logger.error(f"Failed to create client from env: {e}")
             return None

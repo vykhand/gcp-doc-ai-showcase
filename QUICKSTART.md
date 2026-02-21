@@ -2,6 +2,14 @@
 
 This guide walks you through setting up GCP Document AI from scratch.
 
+> **Note:** Steps 1–2 and the CLI option in step 4 use the `gcloud` CLI. If you don't have it installed, follow the [official installation guide](https://cloud.google.com/sdk/docs/install). On macOS you can also install it via Homebrew:
+>
+> ```bash
+> brew install --cask google-cloud-sdk
+> ```
+>
+> After installing, authenticate with `gcloud auth login`. If you prefer not to install the CLI, you can do everything through the [GCP Console](https://console.cloud.google.com) instead.
+
 ## 1. Create or Select a GCP Project
 
 ```bash
@@ -40,12 +48,36 @@ You need to create at least one processor. Go to the [GCP Console > Document AI]
 | Invoice Parser | Invoice processing |
 | Expense Parser | Receipt/expense reports |
 
-## 4. Create an API Key
+## 4. Create a Service Account & Download Key
 
-1. Go to **GCP Console > APIs & Services > Credentials**
-2. Click **Create Credentials > API Key**
-3. Click **Restrict Key** and under **API restrictions**, select **Cloud Document AI API**
-4. Save and copy your API key
+### Via GCP Console (recommended)
+
+1. Go to **GCP Console > IAM & Admin > Service Accounts**
+2. Click **Create Service Account**
+3. Name it (e.g., `docai-sa`), click **Create and Continue**
+4. Grant the role **Document AI > Cloud Document AI API User** (`roles/documentai.apiUser`), click **Continue**, then **Done**
+5. Click on the newly created service account
+6. Go to the **Keys** tab
+7. Click **Add Key > Create new key**
+8. Select **JSON** and click **Create**
+9. The key file downloads automatically — save it somewhere safe
+
+### Via CLI
+
+```bash
+# Create service account
+gcloud iam service-accounts create docai-sa \
+    --display-name="Document AI Service Account"
+
+# Grant permissions
+gcloud projects add-iam-policy-binding my-docai-project \
+    --member="serviceAccount:docai-sa@my-docai-project.iam.gserviceaccount.com" \
+    --role="roles/documentai.apiUser"
+
+# Download key
+gcloud iam service-accounts keys create key.json \
+    --iam-account=docai-sa@my-docai-project.iam.gserviceaccount.com
+```
 
 ## 5. Configure the Application
 
@@ -57,18 +89,18 @@ Create a `.env` file from the template:
 cp .env.template .env
 ```
 
-Edit `.env` with your endpoint and API key:
+Edit `.env` with your endpoint and path to the service account key:
 
 ```
 GCP_DOCAI_ENDPOINT=https://us-documentai.googleapis.com/v1/projects/my-docai-project/locations/us
-GCP_DOCAI_API_KEY=AIza...
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
 ```
 
 The endpoint encodes your project ID and location. Replace `my-docai-project` with your project ID and `us` with your region (`us` or `eu`).
 
 ### Streamlit Cloud
 
-No secrets are required by default. Each user provides their own endpoint and API key in the sidebar. See [STREAMLIT_DEPLOYMENT.md](STREAMLIT_DEPLOYMENT.md) for details.
+No secrets are required by default. Each user provides their own endpoint and service account key JSON in the sidebar. See [STREAMLIT_DEPLOYMENT.md](STREAMLIT_DEPLOYMENT.md) for details.
 
 ## 6. Run the Application
 
@@ -86,7 +118,13 @@ The app will open in your browser. Select a processor from the sidebar, upload a
 
 ### "Permission denied" or 403 errors
 
-Ensure the API key is restricted to the **Cloud Document AI API** and that the Document AI API is enabled in your project.
+Ensure the service account has `roles/documentai.apiUser`:
+
+```bash
+gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member="serviceAccount:docai-sa@PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/documentai.apiUser"
+```
 
 ### "Processor not found" errors
 
@@ -98,7 +136,7 @@ Ensure the API key is restricted to the **Cloud Document AI API** and that the D
 
 The app auto-discovers processors via the REST API. If none appear:
 - Make sure you've created at least one processor in the configured project/location
-- Verify the API key has access to the Document AI API
+- Verify the service account has `documentai.processors.list` permission
 
 ### Debug logging
 
