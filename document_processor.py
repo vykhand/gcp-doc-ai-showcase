@@ -201,16 +201,67 @@ class DocumentProcessor:
     @staticmethod
     def create_sample_documents() -> Dict[str, Dict[str, Any]]:
         """Define sample documents for demo purposes."""
+        _gcs = "https://storage.googleapis.com/cloud-samples-data/documentai/SampleDocuments"
         return {
-            "Invoice Sample (PDF)": {
+            "Winnie the Pooh - 3 Pages (OCR)": {
+                "description": "Multi-page PDF for testing OCR Processor",
+                "processor_type": "OCR_PROCESSOR",
+                "url": f"{_gcs}/OCR_PROCESSOR/Winnie_the_Pooh_3_Pages.pdf",
+            },
+            "Intake Form (Form Parser)": {
+                "description": "Sample intake form for testing Form Parser",
+                "processor_type": "FORM_PARSER_PROCESSOR",
+                "url": f"{_gcs}/FORM_PARSER_PROCESSOR/intake-form.pdf",
+            },
+            "Winnie the Pooh (Layout Parser)": {
+                "description": "Book excerpt for testing Layout Parser (3 pages)",
+                "processor_type": "LAYOUT_PARSER_PROCESSOR",
+                "url": f"{_gcs}/OCR_PROCESSOR/Winnie_the_Pooh_3_Pages.pdf",
+            },
+            "Google Invoice": {
                 "description": "Sample invoice for testing Invoice Parser",
                 "processor_type": "INVOICE_PROCESSOR",
-                "url": "https://raw.githubusercontent.com/googleapis/python-documentai/main/samples/resources/invoice.pdf",
+                "url": f"{_gcs}/INVOICE_PROCESSOR/google_invoice.pdf",
             },
-            "Form Sample (PDF)": {
-                "description": "Sample form for testing Form Parser",
-                "processor_type": "FORM_PARSER_PROCESSOR",
-                "url": "https://raw.githubusercontent.com/googleapis/python-documentai/main/samples/resources/form.pdf",
+            "Office Depot Receipt (Expense)": {
+                "description": "Redacted receipt for testing Expense Parser",
+                "processor_type": "EXPENSE_PROCESSOR",
+                "url": f"{_gcs}/EXPENSE_PROCESSOR/office-depot-redacted.pdf",
+            },
+            "SCE&G Utility Bill": {
+                "description": "Utility bill for testing Utility Parser",
+                "processor_type": "UTILITY_PROCESSOR",
+                "url": f"{_gcs}/UTILITY_PROCESSOR/sce_g-bill.pdf",
+            },
+            "Bank Statement": {
+                "description": "Lending bank statement for testing Bank Statement Parser",
+                "processor_type": "BANK_STATEMENT_PROCESSOR",
+                "url": f"{_gcs}/BANK_STATEMENT_PROCESSOR/lending_bankstatement.pdf",
+            },
+            "CA Hourly Pay Stub": {
+                "description": "California hourly pay stub for testing Paystub Parser",
+                "processor_type": "PAYSTUB_PROCESSOR",
+                "url": "https://www.dir.ca.gov/dlse/paystub.pdf",
+            },
+            "2020 W-2 Form": {
+                "description": "W-2 tax form for testing W2 Parser",
+                "processor_type": "W2_PROCESSOR",
+                "url": f"{_gcs}/FORM_W2_PROCESSOR/2020FormW-2.pdf",
+            },
+            "ID Document (Identity Proofing)": {
+                "description": "Two-page ID document for testing ID Proofing Processor",
+                "processor_type": "ID_PROOFING_PROCESSOR",
+                "url": f"{_gcs}/ID_PROOFING_PROCESSOR/identity_fraud_two_pages_id.pdf",
+            },
+            "US Passport Specimen": {
+                "description": "Next-gen US passport specimen for testing Passport Parser",
+                "processor_type": "US_PASSPORT_PROCESSOR",
+                "url": f"{_gcs}/US_PASSPORT_PROCESSOR/2020-Next-Gen-US-Passport.pdf",
+            },
+            "Driver License": {
+                "description": "Sample driver license for testing DL Parser",
+                "processor_type": "US_DRIVER_LICENSE_PROCESSOR",
+                "url": f"{_gcs}/US_DRIVER_LICENSE_PROCESSOR/dl3.pdf",
             },
         }
 

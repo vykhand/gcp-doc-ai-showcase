@@ -664,6 +664,23 @@ def render_document_preview(uploaded_file, file_source: str):
                     analysis = st.session_state.analysis_result
                     bounding_boxes = analysis.get_bounding_boxes()
 
+                    # Fix rotated page coordinates: if the API reports
+                    # portrait dimensions but the rendered image is landscape
+                    # (or vice-versa), the PDF has a /Rotate flag.  Transform
+                    # normalised vertices so boxes align with the visual image.
+                    api_dims = analysis.get_page_dimensions(page_idx)
+                    if api_dims:
+                        api_portrait = api_dims["width"] < api_dims["height"]
+                        img_portrait = display_image.width < display_image.height
+                        if api_portrait != img_portrait:
+                            for boxes in bounding_boxes.values():
+                                for box in boxes:
+                                    if box.get("page", 0) == page_idx:
+                                        box["vertices"] = [
+                                            {"x": 1 - v["y"], "y": v["x"]}
+                                            for v in box["vertices"]
+                                        ]
+
                     # Check if there are any bounding boxes at all
                     has_boxes = any(boxes for boxes in bounding_boxes.values())
 

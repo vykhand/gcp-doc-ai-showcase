@@ -222,6 +222,12 @@ class GCPDocumentAIClient:
                 pass
             logger.error(f"Document processing failed: {e} — {error_detail}")
             logger.debug(f"Traceback:\n{traceback.format_exc()}")
+            # Re-raise with the API error body so callers can display it
+            if error_detail:
+                raise requests.HTTPError(
+                    f"{e.response.status_code} {e.response.reason}: {error_detail}",
+                    response=e.response,
+                ) from e
             raise
         except Exception as e:
             logger.error(f"Document processing failed: {e}")
@@ -418,6 +424,25 @@ class DocumentAnalysisResult:
                 },
             })
         return result
+
+    def get_page_dimensions(self, page_index: int = 0) -> Optional[Dict[str, float]]:
+        """Get the API-reported page dimensions for rotation detection.
+
+        Returns:
+            Dict with 'width' and 'height' in the unit reported by the API,
+            or None if unavailable.
+        """
+        pages = self.document.get("pages", [])
+        if page_index >= len(pages):
+            return None
+        dim = pages[page_index].get("dimension", {})
+        if not dim:
+            return None
+        w = float(dim.get("width", 0))
+        h = float(dim.get("height", 0))
+        if w <= 0 or h <= 0:
+            return None
+        return {"width": w, "height": h}
 
     def get_page_text_lines(self, page_index: int = 0) -> List[Dict[str, Any]]:
         """Get text lines for a specific page."""

@@ -195,6 +195,9 @@ class FileUploadSection:
                         uploaded_file = io.BytesIO(file_data)
                         uploaded_file.name = url.split("/")[-1]
                         source_type = "url"
+                        # Persist in session state so it survives reruns
+                        st.session_state["_loaded_file"] = uploaded_file
+                        st.session_state["_loaded_source"] = source_type
                     else:
                         st.error("Failed to download document from URL")
 
@@ -224,8 +227,21 @@ class FileUploadSection:
                         st.session_state.recommended_processor = sample_info[
                             "processor_type"
                         ]
+                        # Persist in session state so it survives reruns
+                        st.session_state["_loaded_file"] = uploaded_file
+                        st.session_state["_loaded_source"] = source_type
                     else:
                         st.error("Failed to load sample document")
+
+        # On reruns (e.g. after clicking Analyze), restore from session state
+        if uploaded_file is None and "_loaded_file" in st.session_state:
+            uploaded_file = st.session_state["_loaded_file"]
+            source_type = st.session_state.get("_loaded_source", "sample")
+
+        # Clear persisted file when switching to File Upload (which has its own state)
+        if upload_method == "File Upload" and "_loaded_file" in st.session_state:
+            del st.session_state["_loaded_file"]
+            del st.session_state["_loaded_source"]
 
         return uploaded_file, source_type
 
