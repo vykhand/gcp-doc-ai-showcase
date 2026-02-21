@@ -19,33 +19,11 @@ charset-normalizer==3.4.4
 click==8.3.1
     # via streamlit
 cryptography==46.0.5
-    # via google-auth
+    # via gcp-doc-ai-showcase (pyproject.toml)
 gitdb==4.0.12
     # via gitpython
 gitpython==3.1.46
     # via streamlit
-google-api-core==2.30.0
-    # via
-    #   gcp-doc-ai-showcase (pyproject.toml)
-    #   google-cloud-documentai
-google-auth==2.48.0
-    # via
-    #   gcp-doc-ai-showcase (pyproject.toml)
-    #   google-api-core
-    #   google-cloud-documentai
-google-cloud-documentai==3.10.0
-    # via gcp-doc-ai-showcase (pyproject.toml)
-googleapis-common-protos==1.72.0
-    # via
-    #   google-api-core
-    #   grpcio-status
-grpcio==1.78.1
-    # via
-    #   google-api-core
-    #   google-cloud-documentai
-    #   grpcio-status
-grpcio-status==1.78.1
-    # via google-api-core
 idna==3.11
     # via requests
 jinja2==3.1.6
@@ -80,27 +58,10 @@ pillow==12.1.1
     #   gcp-doc-ai-showcase (pyproject.toml)
     #   pdf2image
     #   streamlit
-proto-plus==1.27.1
-    # via
-    #   google-api-core
-    #   google-cloud-documentai
 protobuf==6.33.5
-    # via
-    #   gcp-doc-ai-showcase (pyproject.toml)
-    #   google-api-core
-    #   google-cloud-documentai
-    #   googleapis-common-protos
-    #   grpcio-status
-    #   proto-plus
-    #   streamlit
+    # via streamlit
 pyarrow==23.0.1
     # via streamlit
-pyasn1==0.6.2
-    # via
-    #   pyasn1-modules
-    #   rsa
-pyasn1-modules==0.4.2
-    # via google-auth
 pycparser==3.0
     # via cffi
 pydeck==0.9.1
@@ -118,14 +79,11 @@ referencing==0.37.0
 requests==2.32.5
     # via
     #   gcp-doc-ai-showcase (pyproject.toml)
-    #   google-api-core
     #   streamlit
 rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-rsa==4.9.1
-    # via google-auth
 six==1.17.0
     # via python-dateutil
 smmap==5.0.2
@@ -142,7 +100,6 @@ typing-extensions==4.15.0
     # via
     #   gcp-doc-ai-showcase (pyproject.toml)
     #   altair
-    #   grpcio
     #   streamlit
 tzdata==2025.3
     # via pandas
