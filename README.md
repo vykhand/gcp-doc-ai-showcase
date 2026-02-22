@@ -4,6 +4,10 @@ Interactive Streamlit application for processing documents with **Google Cloud D
 
 **[Live Demo](https://gcp-doc-ai-showcase.streamlit.app/)**
 
+## Demo
+
+<video src="video/demo.mp4" controls width="100%"></video>
+
 ## Features
 
 - **Multiple processor types**: OCR, Form Parser, Layout Parser, Invoice, Receipt, Expense, Bank Statement, Pay Stub, W-2, ID Document, Passport, Driver License
