@@ -48,9 +48,27 @@ You need to create at least one processor. Go to the [GCP Console > Document AI]
 | Invoice Parser | Invoice processing |
 | Expense Parser | Receipt/expense reports |
 
-## 4. Create a Service Account & Download Key
+## 4. Set Up Authentication
 
-### Via GCP Console (recommended)
+The app supports two authentication methods. Choose the one that fits your environment.
+
+### Option A: Application Default Credentials (recommended for local dev)
+
+This is the simplest approach and works even when your organization blocks service account key creation.
+
+```bash
+gcloud auth application-default login --project my-docai-project
+```
+
+This opens a browser to authenticate. The credentials are saved to `~/.config/gcloud/application_default_credentials.json` and the app picks them up automatically.
+
+> **Note:** `gcloud auth login` alone is **not** enough — it only authenticates the `gcloud` CLI itself. You must run `gcloud auth application-default login` to create credentials that applications can use.
+
+### Option B: Service Account Key File
+
+If you need non-interactive authentication (e.g., CI/CD or server deployments):
+
+#### Via GCP Console
 
 1. Go to **GCP Console > IAM & Admin > Service Accounts**
 2. Click **Create Service Account**
@@ -62,7 +80,7 @@ You need to create at least one processor. Go to the [GCP Console > Document AI]
 8. Select **JSON** and click **Create**
 9. The key file downloads automatically — save it somewhere safe
 
-### Via CLI
+#### Via CLI
 
 ```bash
 # Create service account
@@ -79,6 +97,8 @@ gcloud iam service-accounts keys create key.json \
     --iam-account=docai-sa@my-docai-project.iam.gserviceaccount.com
 ```
 
+> **Note:** Some GCP organizations enforce the `iam.disableServiceAccountKeyCreation` constraint, which blocks key download. In that case, use Option A instead.
+
 ## 5. Configure the Application
 
 ### Local development
@@ -89,14 +109,21 @@ Create a `.env` file from the template:
 cp .env.template .env
 ```
 
-Edit `.env` with your endpoint and path to the service account key:
+Edit `.env` with your endpoint:
 
 ```
 GCP_DOCAI_ENDPOINT=https://us-documentai.googleapis.com/v1/projects/my-docai-project/locations/us
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
 ```
 
 The endpoint encodes your project ID and location. Replace `my-docai-project` with your project ID and `us` with your region (`us` or `eu`).
+
+If using a **service account key** (Option B), also set:
+
+```
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+```
+
+If using **ADC** (Option A), leave `GOOGLE_APPLICATION_CREDENTIALS` commented out or unset — the app will automatically find the credentials from `gcloud auth application-default login`.
 
 ### Streamlit Cloud
 
@@ -118,7 +145,8 @@ The app will open in your browser. Select a processor from the sidebar, upload a
 
 ### "Permission denied" or 403 errors
 
-Ensure the service account has `roles/documentai.apiUser`:
+- If using ADC, re-authenticate: `gcloud auth application-default login --project PROJECT_ID`
+- If using a service account, ensure it has `roles/documentai.apiUser`:
 
 ```bash
 gcloud projects add-iam-policy-binding PROJECT_ID \
@@ -136,7 +164,8 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 
 The app auto-discovers processors via the REST API. If none appear:
 - Make sure you've created at least one processor in the configured project/location
-- Verify the service account has `documentai.processors.list` permission
+- Verify the authenticated account has `documentai.processors.list` permission
+- Check that the region in your endpoint (`us` or `eu`) matches where you created the processors
 
 ### Debug logging
 

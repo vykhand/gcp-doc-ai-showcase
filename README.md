@@ -2,6 +2,8 @@
 
 Interactive Streamlit application for processing documents with **Google Cloud Document AI** and visually overlaying extracted information (text, tables, entities, form fields, checkboxes) with interactive bounding boxes.
 
+**[Live Demo](https://gcp-doc-ai-showcase.streamlit.app/)**
+
 ## Features
 
 - **Multiple processor types**: OCR, Form Parser, Layout Parser, Invoice, Receipt, Expense, Bank Statement, Pay Stub, W-2, ID Document, Passport, Driver License
