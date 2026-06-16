@@ -165,6 +165,43 @@ class GCPDocumentAIClient:
             logger.error(f"Failed to list processors: {e}")
             raise
 
+    def list_processor_versions(self, processor_id: str) -> List[Dict[str, Any]]:
+        """
+        List the available versions of a processor.
+
+        Lets the UI offer a specific version (e.g. a Gemini-powered Layout Parser
+        or Custom Extractor preview version) instead of the default version.
+
+        Args:
+            processor_id: The processor ID (not the full resource name)
+
+        Returns:
+            List of version info dicts with keys: name, display_name, id, state
+        """
+        url = f"{self.endpoint}/processors/{processor_id}/processorVersions"
+        try:
+            resp = self.session.get(url, headers=self._get_auth_headers())
+            resp.raise_for_status()
+            data = resp.json()
+
+            versions = []
+            for ver in data.get("processorVersions", []):
+                ver_name = ver.get("name", "")
+                ver_id = ver_name.split("/")[-1] if ver_name else ""
+                versions.append({
+                    "name": ver_name,
+                    "display_name": ver.get("displayName", ""),
+                    "state": ver.get("state", "UNKNOWN"),
+                    "id": ver_id,
+                })
+
+            logger.info(f"Found {len(versions)} versions for processor {processor_id}")
+            return versions
+
+        except Exception as e:
+            logger.warning(f"Failed to list processor versions for {processor_id}: {e}")
+            raise
+
     def process_document(
         self,
         processor_id: str,
@@ -172,6 +209,8 @@ class GCPDocumentAIClient:
         mime_type: str,
         field_mask: Optional[str] = None,
         process_options: Optional[Dict[str, Any]] = None,
+        processor_version: Optional[str] = None,
+        imageless_mode: bool = False,
     ) -> Dict[str, Any]:
         """
         Process a document synchronously (online processing).
@@ -182,11 +221,23 @@ class GCPDocumentAIClient:
             mime_type: MIME type of the document
             field_mask: Optional field mask to limit response fields
             process_options: Optional processOptions dict (e.g. layoutConfig)
+            processor_version: Optional processor version ID. When set, the
+                request targets ``processorVersions/{version}:process`` instead
+                of the processor's default version.
+            imageless_mode: When True, request imageless processing (no page
+                images returned). Allows up to 30 pages online but disables
+                bounding-box overlays.
 
         Returns:
             Document dict (the "document" key from the REST response)
         """
-        url = f"{self.endpoint}/processors/{processor_id}:process"
+        if processor_version:
+            url = (
+                f"{self.endpoint}/processors/{processor_id}"
+                f"/processorVersions/{processor_version}:process"
+            )
+        else:
+            url = f"{self.endpoint}/processors/{processor_id}:process"
         content_b64 = base64.b64encode(document_data).decode("utf-8")
 
         body: Dict[str, Any] = {
@@ -202,8 +253,13 @@ class GCPDocumentAIClient:
         if process_options:
             body["processOptions"] = process_options
 
+        if imageless_mode:
+            body["imagelessMode"] = True
+
         logger.info(
-            f"Processing document with processor {processor_id}, mime={mime_type}, size={len(document_data)} bytes"
+            f"Processing document with processor {processor_id}"
+            f"{f' version {processor_version}' if processor_version else ' (default version)'}, "
+            f"mime={mime_type}, size={len(document_data)} bytes, imageless={imageless_mode}"
         )
 
         try:
@@ -491,6 +547,11 @@ class DocumentAnalysisResult:
                     if bp:
                         vertices = self._get_normalized_vertices(bp)
 
+            # Derived entities are inferred by the model and have no anchor in
+            # the source text (no textAnchor / pageAnchor). Gemini custom
+            # extractors emit these for fields whose "method" is set to Derived.
+            is_derived = not entity.get("pageAnchor") and not entity.get("textAnchor")
+
             entities.append({
                 "type": entity.get("type", ""),
                 "mention_text": mention_text,
@@ -498,6 +559,7 @@ class DocumentAnalysisResult:
                 "confidence": entity.get("confidence", 0.0),
                 "page": page_index,
                 "vertices": vertices,
+                "is_derived": is_derived,
             })
         return entities
 
@@ -618,6 +680,61 @@ class DocumentAnalysisResult:
         return checkboxes
 
     # ------------------------------------------------------------------
+    # Signatures
+    # ------------------------------------------------------------------
+
+    def get_signatures(self) -> List[Dict[str, Any]]:
+        """Get detected signatures across the document.
+
+        Signatures are surfaced in two ways depending on the processor:
+          - ``page.visualElements`` with a signature ``type`` (OCR / Form Parser
+            with signature detection enabled).
+          - ``entities`` whose ``type`` mentions "signature" (custom extractors,
+            including derived signatures with no bounding box).
+        """
+        signatures: List[Dict[str, Any]] = []
+
+        for page_idx, page in enumerate(self.document.get("pages", [])):
+            for ve in page.get("visualElements", []):
+                if "signature" not in ve.get("type", "").lower():
+                    continue
+                layout = ve.get("layout")
+                vertices = self._get_normalized_vertices(
+                    layout.get("boundingPoly")
+                ) if layout else []
+                signatures.append({
+                    "page": page_idx,
+                    "vertices": vertices,
+                    "confidence": layout.get("confidence", 0.0) if layout else 0.0,
+                    "source": "visualElement",
+                    "is_derived": False,
+                })
+
+        for entity in self.document.get("entities", []):
+            if "signature" not in entity.get("type", "").lower():
+                continue
+            page_index = 0
+            vertices: List[Dict[str, float]] = []
+            page_anchor = entity.get("pageAnchor")
+            if page_anchor:
+                page_refs = page_anchor.get("pageRefs", [])
+                if page_refs:
+                    ref = page_refs[0]
+                    page_index = int(ref.get("page", 0))
+                    bp = ref.get("boundingPoly")
+                    if bp:
+                        vertices = self._get_normalized_vertices(bp)
+            signatures.append({
+                "page": page_index,
+                "vertices": vertices,
+                "confidence": entity.get("confidence", 0.0),
+                "source": "entity",
+                "is_derived": not entity.get("pageAnchor") and not entity.get("textAnchor"),
+            })
+
+        return signatures
+
+    # ------------------------------------------------------------------
     # Paragraphs
     # ------------------------------------------------------------------
 
@@ -660,6 +777,7 @@ class DocumentAnalysisResult:
             "form_fields": [],
             "entities": [],
             "checkboxes": [],
+            "signatures": [],
         }
 
         # 1. Text lines
@@ -771,8 +889,10 @@ class DocumentAnalysisResult:
                             },
                         })
 
-        # 5. Entities
+        # 5. Entities (signatures are drawn separately, below)
         for entity in self.document.get("entities", []):
+            if "signature" in entity.get("type", "").lower():
+                continue
             page_index = 0
             vertices = []
             page_anchor = entity.get("pageAnchor")
@@ -822,6 +942,18 @@ class DocumentAnalysisResult:
                         "state": cb.get("state", "unknown"),
                         "key": cb.get("key", ""),
                     },
+                })
+
+        # 7. Signatures (only those with bounding boxes; derived ones have none)
+        for sig in self.get_signatures():
+            if sig.get("vertices"):
+                bounding_boxes["signatures"].append({
+                    "page": sig["page"],
+                    "vertices": sig["vertices"],
+                    "content": "Signature",
+                    "type": "signature",
+                    "confidence": sig.get("confidence", 0.0),
+                    "details": {"source": sig.get("source", "")},
                 })
 
         return bounding_boxes

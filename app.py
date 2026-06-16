@@ -33,6 +33,7 @@ from ui_components import (
     ResultsDisplay,
     StatusDisplay,
     render_connection_status,
+    render_processing_options,
 )
 from simple_annotator import SimpleDocumentAnnotator
 
@@ -190,11 +191,32 @@ def render_main_header():
 # ------------------------------------------------------------------
 
 
+def _build_ocr_process_options(ocr_opts: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Translate the OCR add-on checkboxes into a processOptions.ocrConfig dict.
+
+    Returns None when no add-ons are enabled, so the default request is unchanged.
+    """
+    ocr_config: Dict[str, Any] = {}
+    premium: Dict[str, Any] = {}
+    if ocr_opts.get("enable_selection_mark_detection"):
+        premium["enableSelectionMarkDetection"] = True
+    if ocr_opts.get("compute_style_info"):
+        premium["computeStyleInfo"] = True
+    if ocr_opts.get("enable_math_ocr"):
+        premium["enableMathOcr"] = True
+    if ocr_opts.get("enable_image_quality_scores"):
+        ocr_config["enableImageQualityScores"] = True
+    if premium:
+        ocr_config["premiumFeatures"] = premium
+    return {"ocrConfig": ocr_config} if ocr_config else None
+
+
 def handle_document_analysis(
     client: GCPDocumentAIClient,
     processor_info: Dict[str, Any],
     file_data: bytes,
     mime_type: str,
+    processing_options: Optional[Dict[str, Any]] = None,
 ):
     """
     Run document processing and store results in session state.
@@ -204,7 +226,9 @@ def handle_document_analysis(
         processor_info: Dict with processor_id, processor_type, display_name
         file_data: Raw document bytes
         mime_type: MIME type of the document
+        processing_options: UI-selected options (imageless mode, OCR add-ons)
     """
+    processing_options = processing_options or {}
     processor_id = processor_info["processor_id"]
     logger.info(f"Starting analysis with processor {processor_id}, mime={mime_type}, size={len(file_data)} bytes")
 
@@ -214,10 +238,10 @@ def handle_document_analysis(
         status_placeholder.info("Uploading document and processing...")
 
         try:
-            # Enable chunking for Layout Parser so chunkedDocument is populated
             process_options = None
             proc_type = processor_info.get("processor_type", "")
             if proc_type == "LAYOUT_PARSER_PROCESSOR":
+                # Enable chunking for Layout Parser so chunkedDocument is populated
                 process_options = {
                     "layoutConfig": {
                         "chunkingConfig": {
@@ -226,12 +250,18 @@ def handle_document_analysis(
                         }
                     }
                 }
+            elif proc_type == "OCR_PROCESSOR":
+                process_options = _build_ocr_process_options(
+                    processing_options.get("ocr", {})
+                )
 
             document_dict = client.process_document(
                 processor_id=processor_id,
                 document_data=file_data,
                 mime_type=mime_type,
                 process_options=process_options,
+                processor_version=processor_info.get("processor_version"),
+                imageless_mode=bool(processing_options.get("imageless_mode")),
             )
 
             analysis = DocumentAnalysisResult(document_dict)
@@ -303,6 +333,7 @@ ELEMENT_INFO = {
     "form_fields": {"color": "#FF8C00", "name": "Form Field"},
     "entities": {"color": "#DC143C", "name": "Entity"},
     "checkboxes": {"color": "#8A2BE2", "name": "Checkbox"},
+    "signatures": {"color": "#008080", "name": "Signature"},
 }
 
 
@@ -414,6 +445,12 @@ def _create_interactive_annotations(
                     tooltip_lines.append(
                         f"<div style='font-size:0.9em;color:#666;'><strong>State:</strong> {state}</div>"
                     )
+                elif box_type == "signatures":
+                    source = details.get("source", "")
+                    if source:
+                        tooltip_lines.append(
+                            f"<div style='font-size:0.9em;color:#666;'><strong>Source:</strong> {html_lib.escape(source)}</div>"
+                        )
 
             tooltip_content = "".join(tooltip_lines)
             overlay_id = f"overlay-{overlay_count}"
@@ -592,7 +629,15 @@ def render_document_preview(uploaded_file, file_source: str):
         images = DocumentProcessor.convert_to_images(file_data, ext)
 
         if not images:
-            st.warning("Could not generate preview for this document type.")
+            if ext in ("docx", "pptx", "xlsx", "xlsm"):
+                st.info(
+                    f"**{ext.upper()}** files have no image preview, so bounding-box "
+                    "overlays are not available. Use the **Layout Parser** processor and "
+                    "see the **Document Layout**, **Chunks**, and **Text** tabs below for "
+                    "the extracted structure."
+                )
+            else:
+                st.warning("Could not generate preview for this document type.")
             return
 
         st.session_state.document_images = images
@@ -779,7 +824,8 @@ def main():
     processor_info = ProcessorSelector.render_processor_selector(
         st.session_state.discovered_processors
         if st.session_state.discovered_processors
-        else None
+        else None,
+        client=client,
     )
 
     if not processor_info:
@@ -787,6 +833,11 @@ def main():
         st.stop()
 
     st.session_state.selected_processor = processor_info
+
+    # Processing options (imageless mode, OCR add-ons)
+    processing_options = render_processing_options(
+        processor_info.get("processor_type", "")
+    )
 
     # Main content: two columns
     col1, col2 = st.columns([2, 3])
@@ -851,7 +902,8 @@ def main():
                             uploaded_file.name if hasattr(uploaded_file, "name") else "document.pdf"
                         )
                         handle_document_analysis(
-                            client, processor_info, file_data, mime_type
+                            client, processor_info, file_data, mime_type,
+                            processing_options=processing_options,
                         )
                     except Exception as e:
                         st.error(f"Error preparing file for analysis: {e}")

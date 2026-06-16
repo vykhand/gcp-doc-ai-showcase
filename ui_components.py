@@ -27,6 +27,7 @@ class ProcessorSelector:
     @staticmethod
     def render_processor_selector(
         discovered_processors: Optional[List[Dict[str, Any]]] = None,
+        client: Optional[Any] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Render processor selection UI.
@@ -35,8 +36,13 @@ class ProcessorSelector:
         in a dropdown. Otherwise, fall back to manual processor ID entry with
         a type hint dropdown.
 
+        Args:
+            discovered_processors: Processors discovered in the project, if any.
+            client: GCP client, used to list processor versions for the version
+                selector.
+
         Returns:
-            Dict with processor_id and processor_type, or None
+            Dict with processor_id, processor_type, and processor_version, or None
         """
         st.sidebar.header("Processor")
 
@@ -61,14 +67,57 @@ class ProcessorSelector:
             if selected_label:
                 proc = proc_options[selected_label]
                 ProcessorSelector._render_processor_info_from_discovered(proc)
+                version = ProcessorSelector._render_version_selector(client, proc["id"])
                 return {
                     "processor_id": proc["id"],
                     "processor_type": proc["type"],
                     "display_name": proc["display_name"],
+                    "processor_version": version,
                 }
             return None
         else:
             return ProcessorSelector._render_manual_input()
+
+    @staticmethod
+    def _render_version_selector(client: Optional[Any], processor_id: str) -> Optional[str]:
+        """Render a processor-version dropdown (deployed versions + default).
+
+        Returns the selected version ID, or None for the processor's default
+        version. Used to target Gemini-powered Layout Parser / Custom Extractor
+        preview versions. Results are cached per processor to avoid an API call
+        on every rerun.
+        """
+        if client is None:
+            return None
+
+        cache = st.session_state.setdefault("processor_versions_cache", {})
+        if processor_id not in cache:
+            try:
+                cache[processor_id] = client.list_processor_versions(processor_id)
+            except Exception:
+                cache[processor_id] = []
+
+        deployed = [v for v in cache[processor_id] if v.get("state") == "DEPLOYED"]
+
+        # Map a human label -> version id; "Default version" -> None
+        options: Dict[str, Optional[str]] = {"Default version": None}
+        for v in deployed:
+            label = v.get("display_name") or v.get("id")
+            options[f"{label} ({v.get('id')})"] = v.get("id")
+
+        if len(options) == 1:
+            # No deployed versions discoverable; silently use the default.
+            return None
+
+        selected = st.sidebar.selectbox(
+            "Processor version:",
+            list(options.keys()),
+            help=(
+                "Choose a specific deployed version (e.g. a Gemini-powered "
+                "Layout Parser or Custom Extractor), or use the processor default."
+            ),
+        )
+        return options.get(selected)
 
     @staticmethod
     def _render_manual_input() -> Optional[Dict[str, Any]]:
@@ -104,11 +153,21 @@ class ProcessorSelector:
             ),
         )
 
+        processor_version = st.sidebar.text_input(
+            "Processor version ID (optional)",
+            placeholder="pretrained-layout-parser-v1.5-pro-2025-08-25",
+            help=(
+                "Optional. Target a specific deployed version (e.g. a Gemini-powered "
+                "Layout Parser or Custom Extractor). Leave blank to use the default version."
+            ),
+        )
+
         if processor_id:
             return {
                 "processor_id": processor_id.strip(),
                 "processor_type": selected_type or "UNKNOWN",
                 "display_name": selected_type_label or processor_id,
+                "processor_version": processor_version.strip() or None,
             }
         return None
 
@@ -144,6 +203,55 @@ class ProcessorSelector:
 
 
 # ------------------------------------------------------------------
+# Processing options
+# ------------------------------------------------------------------
+
+
+def render_processing_options(processor_type: str) -> Dict[str, Any]:
+    """Render processing options in the sidebar and return them as a dict.
+
+    Includes imageless mode (all processors) and OCR premium add-ons (shown only
+    for the OCR processor). The returned dict is consumed by the analysis handler
+    to build the request's ``processOptions`` / ``imagelessMode``.
+    """
+    opts: Dict[str, Any] = {"imageless_mode": False, "ocr": {}}
+    with st.sidebar.expander("Processing Options", expanded=False):
+        opts["imageless_mode"] = st.checkbox(
+            "Imageless mode",
+            value=False,
+            help=(
+                "Omit page images from the API response — smaller payload and up to "
+                "30 pages online (instead of 15)."
+            ),
+        )
+        if processor_type == "OCR_PROCESSOR":
+            st.caption("OCR add-ons — require an OCR 2.0+ processor version")
+            opts["ocr"] = {
+                "enable_selection_mark_detection": st.checkbox(
+                    "Selection mark detection",
+                    value=False,
+                    help="Detect filled / unfilled checkboxes and radio buttons.",
+                ),
+                "compute_style_info": st.checkbox(
+                    "Font style info",
+                    value=False,
+                    help="Return font family, size, weight, and style.",
+                ),
+                "enable_math_ocr": st.checkbox(
+                    "Math OCR (LaTeX)",
+                    value=False,
+                    help="Extract mathematical formulas as LaTeX.",
+                ),
+                "enable_image_quality_scores": st.checkbox(
+                    "Image quality scores",
+                    value=False,
+                    help="Return page quality scores and defect detection.",
+                ),
+            }
+    return opts
+
+
+# ------------------------------------------------------------------
 # File upload
 # ------------------------------------------------------------------
 
@@ -173,8 +281,15 @@ class FileUploadSection:
         if upload_method == "File Upload":
             uploaded_file = st.file_uploader(
                 "Choose a document file",
-                type=["pdf", "jpg", "jpeg", "png", "bmp", "tiff", "tif", "gif", "webp"],
-                help="Upload a document (PDF, images). Max 40 MB for online processing.",
+                type=[
+                    "pdf", "jpg", "jpeg", "png", "bmp", "tiff", "tif", "gif", "webp",
+                    "docx", "pptx", "xlsx", "xlsm",
+                ],
+                help=(
+                    "Upload a document (PDF, images, or Office files). Max 40 MB for "
+                    "online processing. Office formats (DOCX/PPTX/XLSX/XLSM) require the "
+                    "Layout Parser and have no image preview."
+                ),
             )
             source_type = "upload"
 
@@ -386,10 +501,16 @@ class ResultsDisplay:
             st.info("No entities extracted. Try using a specialized processor (Invoice, Receipt, etc.).")
             return
 
+        if any(ent.get("is_derived") for ent in entities):
+            st.caption("✨ = derived entity (inferred by the model, not present verbatim in the text)")
+
         for ent in entities:
             col1, col2, col3 = st.columns([2, 3, 1])
             with col1:
-                st.write(f"**{ent['type']}**")
+                label = f"**{ent['type']}**"
+                if ent.get("is_derived"):
+                    label += " ✨"
+                st.write(label)
             with col2:
                 text = ent["mention_text"]
                 if ent["normalized_value"]:

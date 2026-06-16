@@ -10,12 +10,15 @@ Interactive Streamlit application for processing documents with **Google Cloud D
 
 ## Features
 
-- **Multiple processor types**: OCR, Form Parser, Layout Parser, Invoice, Receipt, Expense, Bank Statement, Pay Stub, W-2, ID Document, Passport, Driver License
+- **Multiple processor types**: OCR, Form Parser, Layout Parser, Custom Extractor (Gemini), Invoice, Expense, Utility, Bank Statement, Pay Stub, W-2, ID Document, Passport, Driver License
 - **Auto-discovery**: Automatically discovers processors configured in your GCP project
+- **Processor version selection**: Pick a specific deployed version — including Gemini-powered Layout Parser and Custom Extractor preview versions — or use the processor default
 - **Interactive bounding boxes**: Hover tooltips showing content, confidence, and type-specific details
 - **Visual annotation**: Color-coded overlays for text lines, tables, paragraphs, form fields, entities, and checkboxes
+- **Layout Parser + chunking**: Hierarchical layout view plus RAG-ready chunks, with Office-document support (DOCX/PPTX/XLSX/XLSM)
+- **Derived entities**: Flags fields inferred by Gemini custom extractors that have no source-text anchor
 - **Multi-page support**: Page navigation with zoom controls
-- **Multiple result views**: Entities, Tables, Form Fields, Text, Raw JSON tabs
+- **Multiple result views**: Document Layout, Chunks, Entities, Tables, Form Fields, Text, Raw JSON tabs
 - **Flexible upload**: File upload, URL input, or sample documents
 - **Deployable**: Ready for Streamlit Community Cloud
 
@@ -70,8 +73,30 @@ logging_config.py       # Centralized logging
 | TIFF | .tiff, .tif | 40 MB |
 | GIF | .gif | 40 MB |
 | WebP | .webp | 40 MB |
+| Word | .docx | 40 MB |
+| PowerPoint | .pptx | 40 MB |
+| Excel | .xlsx, .xlsm | 40 MB |
 
-Online processing supports up to 15 pages per request.
+Office formats (DOCX/PPTX/XLSX/XLSM) are processed by the **Layout Parser** only and have no image preview, so bounding-box overlays are not shown for them — use the Document Layout, Chunks, and Text tabs instead.
+
+Online processing supports up to 15 pages per request (up to 30 with imageless mode, which omits page images).
+
+## Processor versions & Gemini models
+
+The app calls the processor's **default version** unless you pick a specific one. When processors are auto-discovered, a **Processor version** dropdown lists the deployed versions for the selected processor; in manual mode you can type a version ID directly. This lets you target newer Gemini-powered versions such as the Gemini Layout Parser (`pretrained-layout-parser-v1.5-pro-2025-08-25` and later) and Gemini Custom Extractors, provided the version is **deployed** in your GCP project.
+
+For Custom Extractors, the entity schema and the document-level prompt are configured on the processor itself in the GCP Console; this app reads back the extracted entities (including derived/inferred fields) but does not set the prompt per request.
+
+## Processing options
+
+The **Processing Options** panel in the sidebar adds:
+
+- **Imageless mode** — omits page images from the API response (smaller payload; up to 30 pages online instead of 15). Page previews are still rendered locally.
+- **OCR add-ons** (OCR processor, requires an OCR 2.0+ version): selection-mark detection, font-style info, Math OCR (LaTeX), and image-quality scores. These map to `processOptions.ocrConfig.premiumFeatures`.
+
+Detected **signatures** (from OCR/Form visual elements or custom-extractor signature fields) are drawn as teal overlays.
+
+> **Deprecation note:** Google is retiring several legacy processor versions on **June 30, 2026** (older OCR, Expense, and lending models). If a previously working version stops responding, pick a current version from the **Processor version** dropdown.
 
 ## Authentication
 
@@ -97,6 +122,7 @@ Color scheme for bounding box annotations:
 | Form Fields (KVPs) | Orange `#FF8C00` |
 | Entities | Crimson `#DC143C` |
 | Checkboxes | Purple `#8A2BE2` |
+| Signatures | Teal `#008080` |
 
 ## Deployment
 
