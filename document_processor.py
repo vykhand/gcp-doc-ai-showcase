@@ -160,6 +160,13 @@ class DocumentProcessor:
                 except Exception as img_error:
                     st.error(f"Image processing failed: {img_error}")
                     return images
+            elif file_type.lower() in ["docx", "pptx", "xlsx", "xlsm"] or (
+                "officedocument" in file_type or "ms-excel" in file_type
+            ):
+                # Office formats are processed by the Layout Parser but are not
+                # paginated images, so there is no visual preview to render.
+                logger.info(f"No image preview for office format: {file_type}")
+                return images
             else:
                 st.error(f"Unsupported file type for preview: {file_type}")
 

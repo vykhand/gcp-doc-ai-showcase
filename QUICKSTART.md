@@ -43,8 +43,10 @@ You need to create at least one processor. Go to the [GCP Console > Document AI]
 
 | Processor Type | Use Case |
 |---------------|----------|
-| Enterprise Document OCR | General text extraction |
+| Enterprise Document OCR | General text extraction (OCR add-ons need a 2.0+ version) |
 | Form Parser | Forms with key-value pairs and tables |
+| Layout Parser | Structure + RAG-ready chunks; supports DOCX/PPTX/XLSX/XLSM |
+| Custom Extractor | Gemini-powered, schema-defined entities (incl. derived/signature) |
 | Invoice Parser | Invoice processing |
 | Expense Parser | Receipt/expense reports |
 
@@ -140,6 +142,34 @@ uv run streamlit run app.py
 ```
 
 The app will open in your browser. Select a processor from the sidebar, upload a document, and click **Analyze Document**.
+
+## Advanced features
+
+### Processor versions & Gemini models
+
+By default the app calls each processor's **default version**. When processors are auto-discovered, a **Processor version** dropdown lists the deployed versions for the selected processor; in manual mode you can type a version ID directly.
+
+Use this to target newer Gemini-powered versions, for example:
+
+- Gemini **Layout Parser**: `pretrained-layout-parser-v1.5-pro-2025-08-25` (and later v1.6 previews) — better tables, reading order, and figure/chart/table descriptions.
+- Gemini **Custom Extractor**: foundation-model versions with adaptive few-shot extraction.
+
+The version must be **deployed** in your project before it can be selected. Deploy versions from **Document AI > your processor > Manage versions** in the Console.
+
+> **Custom Extractor note:** the entity schema and the document-level prompt (≤ 500 chars of business context) are configured on the processor in the Console — not in this app. The app reads back the extracted entities, including **derived** fields (inferred, no source-text anchor) and detected **signatures**.
+
+### Office documents
+
+The Layout Parser also accepts **DOCX, PPTX, XLSX, and XLSM** files. These are not paginated images, so there's no bounding-box overlay — use the **Document Layout**, **Chunks**, and **Text** tabs for the extracted content.
+
+### Processing options (sidebar)
+
+- **Imageless mode** — smaller responses and up to **30 pages** online (instead of 15).
+- **OCR add-ons** (OCR 2.0+ versions): selection-mark detection, font-style info, Math OCR (LaTeX), image-quality scores.
+
+## Deprecations
+
+Google is retiring several **legacy processor versions on June 30, 2026** (older OCR, Expense, and lending models). If a version stops responding, select a current one from the **Processor version** dropdown or deploy a newer version in the Console.
 
 ## Troubleshooting
 

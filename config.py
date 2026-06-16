@@ -36,14 +36,34 @@ GCP_DOCAI_PROCESSORS = {
     },
     "LAYOUT_PARSER_PROCESSOR": {
         "name": "Layout Parser",
-        "description": "Detect document layout structure including headings, paragraphs, lists, and tables",
+        "description": (
+            "Detect document layout (headings, paragraphs, lists, tables) and create "
+            "RAG-ready chunks. Gemini-powered versions add figure/chart/table "
+            "descriptions and improved reading order. Also supports DOCX, PPTX, XLSX, XLSM."
+        ),
         "category": "General",
         "gcp_type": "LAYOUT_PARSER_PROCESSOR",
-        "capabilities": ["text", "layout", "paragraphs", "tables", "headings"],
+        "capabilities": ["text", "layout", "paragraphs", "tables", "headings", "chunks", "figures"],
         "max_pages_online": 15,
-        "supported_formats": ["pdf", "jpg", "png", "bmp", "tiff", "gif", "webp"],
+        "supported_formats": ["pdf", "jpg", "png", "bmp", "tiff", "gif", "webp", "docx", "pptx", "xlsx", "xlsm"],
         "entity_extraction": False,
         "icon": "📐"
+    },
+    "CUSTOM_EXTRACTION_PROCESSOR": {
+        "name": "Custom Extractor (Gemini)",
+        "description": (
+            "Generative-AI custom extractor built on Gemini foundation models. "
+            "Extracts user-defined entities, including derived (inferred) fields and "
+            "detected signatures. The document-level prompt and schema are configured "
+            "on the processor itself in the GCP Console."
+        ),
+        "category": "Custom",
+        "gcp_type": "CUSTOM_EXTRACTION_PROCESSOR",
+        "capabilities": ["text", "entities", "derived_entities", "signatures"],
+        "max_pages_online": 30,
+        "supported_formats": ["pdf", "jpg", "png", "bmp", "tiff", "gif", "webp"],
+        "entity_extraction": True,
+        "icon": "✨"
     },
     "INVOICE_PROCESSOR": {
         "name": "Invoice Parser",
@@ -149,6 +169,7 @@ GCP_DOCAI_PROCESSORS = {
 # Processor categories for UI organization
 PROCESSOR_CATEGORIES = [
     "General",
+    "Custom",
     "Specialized",
     "Financial",
     "Tax",
@@ -168,6 +189,8 @@ ELEMENT_COLORS = {
     "entity": "#DC143C",            # Crimson (alias)
     "checkboxes": "#8A2BE2",        # Purple
     "checkbox": "#8A2BE2",          # Purple (alias)
+    "signatures": "#008080",        # Teal
+    "signature": "#008080",         # Teal (alias)
 }
 
 # File format support
@@ -214,6 +237,33 @@ SUPPORTED_FORMATS = {
         "max_size_mb": 40,
         "description": "WebP Image"
     },
+    # Office formats are supported by the Layout Parser (GA). They are not
+    # paginated images, so the app shows layout/chunk/text views but no
+    # bounding-box overlay for these.
+    "docx": {
+        "extensions": [".docx"],
+        "mime_types": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+        "max_size_mb": 40,
+        "description": "Word Document (Layout Parser only)"
+    },
+    "pptx": {
+        "extensions": [".pptx"],
+        "mime_types": ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+        "max_size_mb": 40,
+        "description": "PowerPoint Presentation (Layout Parser only)"
+    },
+    "xlsx": {
+        "extensions": [".xlsx"],
+        "mime_types": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+        "max_size_mb": 40,
+        "description": "Excel Spreadsheet (Layout Parser only)"
+    },
+    "xlsm": {
+        "extensions": [".xlsm"],
+        "mime_types": ["application/vnd.ms-excel.sheet.macroEnabled.12"],
+        "max_size_mb": 40,
+        "description": "Macro-Enabled Excel Spreadsheet (Layout Parser only)"
+    },
 }
 
 # MIME type lookup
@@ -227,6 +277,10 @@ MIME_TYPE_MAP = {
     ".tif": "image/tiff",
     ".gif": "image/gif",
     ".webp": "image/webp",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
 }
 
 
